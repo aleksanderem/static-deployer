@@ -1,0 +1,2 @@
+[2025-03-08 15:42:56][error] PHP SSH2 extension is not installed
+[2025-03-08 15:42:56][error] SFTP connection test failed: PHP SSH2 extension is not installed. Please contact your hosting provider.
