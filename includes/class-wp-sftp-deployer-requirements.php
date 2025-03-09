@@ -7,8 +7,8 @@ class WP_SFTP_Deployer_Requirements {
         'extensions' => [
             'ssh2' => [
                 'name' => 'SSH2',
-                'critical' => true,
-                'message' => 'The PHP SSH2 extension is required for SFTP connections. Please install it or contact your hosting provider.'
+                'critical' => false, // Nie jest krytyczne, używamy phpseclib jako fallback
+                'message' => 'The PHP SSH2 extension is not available. The plugin will use phpseclib instead (no PHP extension needed, but may be slower).'
             ],
             'zip' => [
                 'name' => 'ZIP',
@@ -19,6 +19,11 @@ class WP_SFTP_Deployer_Requirements {
                 'name' => 'JSON',
                 'critical' => true,
                 'message' => 'The PHP JSON extension is required for plugin settings. Please install it or contact your hosting provider.'
+            ],
+            'curl' => [
+                'name' => 'cURL',
+                'critical' => false,
+                'message' => 'The PHP cURL extension is recommended for optimal performance.'
             ]
         ],
         'php_version' => [
@@ -55,6 +60,7 @@ class WP_SFTP_Deployer_Requirements {
         $this->check_php_version();
         $this->check_extensions();
         $this->check_permissions();
+        $this->check_phpseclib();
 
         return [
             'errors' => $this->errors,
@@ -116,30 +122,45 @@ class WP_SFTP_Deployer_Requirements {
         }
     }
 
-    /**
-     * Display admin notices for requirements issues
-     */
-    public function display_notices() {
-        if (!empty($this->errors)) {
-            echo '<div class="notice notice-error">';
-            echo '<p><strong>SFTP Deployer - Critical Requirements Not Met:</strong></p>';
-            echo '<ul style="margin-left: 20px; list-style-type: disc;">';
-            foreach ($this->errors as $error) {
-                echo '<li>' . esc_html($error) . '</li>';
-            }
-            echo '</ul>';
-            echo '</div>';
-        }
+   /**
+        * Check if phpseclib is available
+        */
+       private function check_phpseclib() {
+           // Jeśli SSH2 jest dostępne, to nie musimy sprawdzać phpseclib
+           if (extension_loaded('ssh2')) {
+               return;
+           }
 
-        if (!empty($this->warnings)) {
-            echo '<div class="notice notice-warning">';
-            echo '<p><strong>SFTP Deployer - Recommendations:</strong></p>';
-            echo '<ul style="margin-left: 20px; list-style-type: disc;">';
-            foreach ($this->warnings as $warning) {
-                echo '<li>' . esc_html($warning) . '</li>';
-            }
-            echo '</ul>';
-            echo '</div>';
-        }
-    }
-}
+           // Jeśli SSH2 nie jest dostępne, sprawdź czy mamy phpseclib
+           if (!class_exists('\phpseclib3\Net\SFTP')) {
+               $this->errors[] = 'Neither PHP SSH2 extension nor phpseclib is available. SFTP functionality will not work. Please install SSH2 extension or include phpseclib library.';
+           }
+       }
+
+       /**
+        * Display admin notices for requirements issues
+        */
+       public function display_notices() {
+           if (!empty($this->errors)) {
+               echo '<div class="notice notice-error">';
+               echo '<p><strong>SFTP Deployer - Critical Requirements Not Met:</strong></p>';
+               echo '<ul style="margin-left: 20px; list-style-type: disc;">';
+               foreach ($this->errors as $error) {
+                   echo '<li>' . esc_html($error) . '</li>';
+               }
+               echo '</ul>';
+               echo '</div>';
+           }
+
+           if (!empty($this->warnings)) {
+               echo '<div class="notice notice-warning">';
+               echo '<p><strong>SFTP Deployer - Recommendations:</strong></p>';
+               echo '<ul style="margin-left: 20px; list-style-type: disc;">';
+               foreach ($this->warnings as $warning) {
+                   echo '<li>' . esc_html($warning) . '</li>';
+               }
+               echo '</ul>';
+               echo '</div>';
+           }
+       }
+   }

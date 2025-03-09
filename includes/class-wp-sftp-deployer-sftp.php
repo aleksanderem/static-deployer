@@ -1,23 +1,81 @@
 <?php
-  /**
-   * SFTP functionality
-   */
-  class WP_SFTP_Deployer_SFTP {
-    private $connection;
-    private $sftp;
+/**
+ * SFTP connection and operations handler
+ */
+class WP_SFTP_Deployer_SFTP {
+    private $connection = null;
+    private $sftp = null;
     private $logger;
     private $using_phpseclib = false;
+    private $connected = false;
 
+    /**
+     * Constructor
+     */
     public function __construct() {
-      $this->logger = new WP_SFTP_Deployer_Logger();
-
-      // Check if SSH2 extension is loaded
-      $this->using_phpseclib = !extension_loaded('ssh2');
-      if (!extension_loaded('ssh2')) {
-        $this->logger->log('PHP SSH2 extension is not installed; switching to phpseclib', 'error');
-        // throw new Exception('PHP SSH2 extension is not installed. Please contact your hosting provider.');
-      }
+        $this->logger = new WP_SFTP_Deployer_Logger();
+        // Sprawdź czy mamy dostępne rozszerzenie SSH2
+        $this->using_phpseclib = !extension_loaded('ssh2');
     }
+
+    /**
+     * Connect to the SFTP server
+     */
+    public function connect($config) {
+        if ($this->connected) {
+            return true;
+        }
+
+        $this->logger->log('Connecting to SFTP server: ' . $config['host'] . ':' . $config['port']);
+
+        try {
+            if ($this->using_phpseclib) {
+                $result = $this->connect_with_phpseclib($config);
+            } else {
+                $result = $this->connect_with_ssh2($config);
+            }
+
+            $this->connected = true;
+            $this->logger->log('Successfully connected to SFTP server');
+            return $result;
+        } catch (Exception $e) {
+            $this->logger->log('SFTP connection error: ' . $e->getMessage(), 'error');
+            throw $e;
+        }
+    }
+
+    /**
+     * Connect using PHP's ssh2 extension
+     */
+    private function connect_with_ssh2($config) {
+        $this->logger->log('Using native SSH2 extension');
+
+        // Connect to server
+        $connection = @ssh2_connect($config['host'], $config['port']);
+        if (!$connection) {
+            throw new Exception("Could not connect to SFTP server. Please check host and port settings.");
+        }
+
+        // Authenticate
+        if (!@ssh2_auth_password($connection, $config['username'], $config['password'])) {
+            throw new Exception("SFTP authentication failed. Please check username and password.");
+        }
+
+        // Initialize SFTP subsystem
+        $sftp = @ssh2_sftp($connection);
+        if (!$sftp) {
+            throw new Exception("Could not initialize SFTP subsystem.");
+        }
+
+        $this->connection = $connection;
+        $this->sftp = $sftp;
+
+        return true;
+    }
+
+    /**
+     * Connect using phpseclib (pure PHP implementation)
+     */
     private function connect_with_phpseclib($config) {
         $this->logger->log('Using phpseclib for SFTP connection');
 
@@ -30,209 +88,184 @@
             }
 
             $this->sftp = $sftp;
-            $this->connection = true;
-
             return true;
         } catch (Exception $e) {
             $this->logger->log('SFTP connection error: ' . $e->getMessage(), 'error');
             throw $e;
         }
     }
+
     /**
-     * Connect to the SFTP server
+     * Upload a file to the server
      */
-    private function connect_with_ssh2($config) {
-        $this->logger->log('Connecting to SFTP server: ' . $config['host'] . ':' . $config['port']);
-        // Connect to server
-        $this->connection = @ssh2_connect($config['host'], $config['port']);
-        if (!$this->connection) {
-          $this->logger->log('Could not connect to SFTP server', 'error');
-          throw new Exception("Could not connect to SFTP server. Please check host and port settings.");
-        }
+    public function upload_file($local_file, $remote_file) {
+        $this->logger->log("Uploading file: $local_file to $remote_file");
 
-        // Authenticate
-        if (!@ssh2_auth_password($this->connection, $config['username'], $config['password'])) {
-          $this->logger->log('SFTP authentication failed for user: ' . $config['username'], 'error');
-          throw new Exception("SFTP authentication failed. Please check username and password.");
-        }
+        try {
+            if ($this->using_phpseclib) {
+                // Phpseclib implementation
+                $result = $this->sftp->put($remote_file, $local_file, \phpseclib3\Net\SFTP::SOURCE_LOCAL_FILE);
+            } else {
+                // Native SSH2 implementation
+                $sftp_remote_file = 'ssh2.sftp://' . intval($this->sftp) . $remote_file;
+                $result = file_put_contents($sftp_remote_file, file_get_contents($local_file));
+            }
 
-        // Initialize SFTP subsystem
-        $this->sftp = @ssh2_sftp($this->connection);
-        if (!$this->sftp) {
-          $this->logger->log('Could not initialize SFTP subsystem', 'error');
-          throw new Exception("Could not initialize SFTP subsystem.");
-        }
+            if (!$result) {
+                throw new Exception("Failed to upload file: $local_file");
+            }
 
-        $this->logger->log('Successfully connected to SFTP server');
-        return true;
-    }
-    public function connect($config) {
-       if ($this->using_phpseclib) {
-            return $this->connect_with_phpseclib($config);
-        } else {
-            return $this->connect_with_ssh2($config);
+            $this->logger->log("File uploaded successfully");
+            return true;
+        } catch (Exception $e) {
+            $this->logger->log('Upload error: ' . $e->getMessage(), 'error');
+            throw $e;
         }
     }
 
     /**
-     * Check if remote directory exists and has files
+     * Download a file from the server
      */
-    public function check_remote_dir($remote_path) {
-      $sftp_path = 'ssh2.sftp://' . intval($this->sftp) . $remote_path;
+    public function download_file($remote_file, $local_file) {
+        $this->logger->log("Downloading file: $remote_file to $local_file");
 
-      // Check if directory exists
-      if (!file_exists($sftp_path)) {
-        // Create directory if it doesn't exist
-        if (!$this->exec_command('mkdir -p ' . escapeshellarg($remote_path))) {
-          $this->logger->log('Failed to create remote directory: ' . $remote_path, 'error');
-          throw new Exception("Failed to create remote directory: $remote_path");
+        try {
+            if ($this->using_phpseclib) {
+                // Phpseclib implementation
+                $result = $this->sftp->get($remote_file, $local_file);
+            } else {
+                // Native SSH2 implementation
+                $sftp_remote_file = 'ssh2.sftp://' . intval($this->sftp) . $remote_file;
+                $result = file_put_contents($local_file, file_get_contents($sftp_remote_file));
+            }
+
+            if (!$result) {
+                throw new Exception("Failed to download file: $remote_file");
+            }
+
+            $this->logger->log("File downloaded successfully");
+            return true;
+        } catch (Exception $e) {
+            $this->logger->log('Download error: ' . $e->getMessage(), 'error');
+            throw $e;
         }
-        $this->logger->log('Created remote directory: ' . $remote_path);
-        return false;
-      }
+    }
 
-      // Check if directory has files
-      $dir_handle = opendir($sftp_path);
-      if (!$dir_handle) {
-        $this->logger->log('Could not read remote directory: ' . $remote_path, 'error');
-        throw new Exception("Could not read remote directory: $remote_path");
-      }
+    /**
+     * Create a directory on the server
+     */
+    public function mkdir($remote_dir) {
+        $this->logger->log("Creating directory: $remote_dir");
 
-      $has_files = false;
-      while (($file = readdir($dir_handle)) !== false) {
-        if ($file != '.' && $file != '..') {
-          $has_files = true;
-          break;
+        try {
+            if ($this->using_phpseclib) {
+                // Phpseclib implementation
+                $result = $this->sftp->mkdir($remote_dir, -1, true); // Rekursywne tworzenie
+            } else {
+                // Native SSH2 implementation
+                $sftp_remote_dir = 'ssh2.sftp://' . intval($this->sftp) . $remote_dir;
+                $result = @mkdir($sftp_remote_dir, 0755, true);
+            }
+
+            if (!$result) {
+                throw new Exception("Failed to create directory: $remote_dir");
+            }
+
+            $this->logger->log("Directory created successfully");
+            return true;
+        } catch (Exception $e) {
+            $this->logger->log('Directory creation error: ' . $e->getMessage(), 'error');
+            throw $e;
         }
-      }
-      closedir($dir_handle);
-
-      if ($has_files) {
-        $this->logger->log('Remote directory contains files: ' . $remote_path);
-      } else {
-        $this->logger->log('Remote directory is empty: ' . $remote_path);
-      }
-
-      return $has_files;
     }
 
     /**
-     * Upload a file to the SFTP server
+     * Check if a file exists on the server
      */
-    public function upload_file($local_file, $remote_path) {
-      $remote_file = rtrim($remote_path, '/') . '/' . basename($local_file);
-      $sftp_remote_file = 'ssh2.sftp://' . intval($this->sftp) . $remote_file;
-
-      $this->logger->log('Uploading file to: ' . $remote_file);
-
-      $content = file_get_contents($local_file);
-      if ($content === false) {
-        $this->logger->log('Could not read local file: ' . $local_file, 'error');
-        throw new Exception("Could not read local file: $local_file");
-      }
-
-      $stream = @fopen($sftp_remote_file, 'w');
-      if (!$stream) {
-        $this->logger->log('Could not open remote file for writing: ' . $remote_file, 'error');
-        throw new Exception("Could not open remote file for writing: $remote_file");
-      }
-
-      if (@fwrite($stream, $content) === false) {
-        fclose($stream);
-        $this->logger->log('Could not write to remote file: ' . $remote_file, 'error');
-        throw new Exception("Could not write to remote file: $remote_file");
-      }
-
-      fclose($stream);
-      $this->logger->log('File uploaded successfully: ' . $remote_file);
-
-      return $remote_file;
+    public function file_exists($remote_file) {
+        try {
+            if ($this->using_phpseclib) {
+                // Phpseclib implementation
+                return $this->sftp->file_exists($remote_file);
+            } else {
+                // Native SSH2 implementation
+                $sftp_remote_file = 'ssh2.sftp://' . intval($this->sftp) . $remote_file;
+                return file_exists($sftp_remote_file);
+            }
+        } catch (Exception $e) {
+            $this->logger->log('File check error: ' . $e->getMessage(), 'error');
+            return false;
+        }
     }
 
     /**
-     * Extract the ZIP file on the remote server
+     * List directory contents
      */
-    public function extract_zip($remote_zip, $remote_path) {
-      $this->logger->log('Extracting remote ZIP file: ' . $remote_zip);
+    public function list_directory($remote_dir) {
+        $this->logger->log("Listing directory: $remote_dir");
 
-      $command = 'cd ' . escapeshellarg($remote_path) . ' && unzip -o ' . escapeshellarg(basename($remote_zip));
-      $result = $this->exec_command($command);
+        try {
+            if ($this->using_phpseclib) {
+                // Phpseclib implementation
+                $result = $this->sftp->nlist($remote_dir);
+            } else {
+                // Native SSH2 implementation
+                $sftp_remote_dir = 'ssh2.sftp://' . intval($this->sftp) . $remote_dir;
+                $handle = opendir($sftp_remote_dir);
+                $result = [];
 
-      if (!$result) {
-        $this->logger->log('Failed to extract ZIP file: ' . $remote_zip, 'error');
-        throw new Exception("Failed to extract ZIP file on remote server. Make sure unzip is installed.");
-      }
+                if ($handle) {
+                    while (($file = readdir($handle)) !== false) {
+                        if ($file != '.' && $file != '..') {
+                            $result[] = $file;
+                        }
+                    }
+                    closedir($handle);
+                }
+            }
 
-      $this->logger->log('ZIP file extracted successfully');
-      return true;
+            return $result;
+        } catch (Exception $e) {
+            $this->logger->log('Directory listing error: ' . $e->getMessage(), 'error');
+            throw $e;
+        }
     }
 
     /**
-     * Delete a file on the remote server
-     */
-    /**
-     * Delete a file on the remote server
-     */
-    public function delete_file($remote_file) {
-      $this->logger->log('Deleting remote file: ' . $remote_file);
-
-      $sftp_remote_file = 'ssh2.sftp://' . intval($this->sftp) . $remote_file;
-      if (!@unlink($sftp_remote_file)) {
-        $this->logger->log('Failed to delete remote file: ' . $remote_file, 'error');
-        throw new Exception("Failed to delete remote file: $remote_file");
-      }
-
-      $this->logger->log('Remote file deleted successfully');
-      return true;
-    }
-
-    /**
-     * Execute a command on the remote server
-     */
-    private function exec_command($command) {
-      $this->logger->log('Executing command: ' . $command);
-
-      $stream = @ssh2_exec($this->connection, $command);
-      if (!$stream) {
-        $this->logger->log('Failed to execute command: ' . $command, 'error');
-        return false;
-      }
-
-      stream_set_blocking($stream, true);
-      $output = stream_get_contents($stream);
-      fclose($stream);
-
-      $this->logger->log('Command output: ' . $output);
-      return true;
-    }
-    /**
-     * Test SFTP connection
+     * Test the SFTP connection
      */
     public function test_connection($config) {
-        $this->logger->log('Testing SFTP connection to: ' . $config['host'] . ':' . $config['port']);
+        try {
+            if (!extension_loaded('ssh2') && !class_exists('\phpseclib3\Net\SFTP')) {
+                throw new Exception("No SFTP implementation available. Install PHP SSH2 extension or include phpseclib.");
+            }
 
-        // Connect to server
-        $connection = @ssh2_connect($config['host'], $config['port']);
-        if (!$connection) {
-            $this->logger->log('Could not connect to SFTP server', 'error');
-            throw new Exception("Could not connect to SFTP server. Please check host and port settings.");
+            // Try connecting
+            $this->connect($config);
+
+            // Disconnect after test
+            $this->disconnect();
+
+            return true;
+        } catch (Exception $e) {
+            throw $e;
         }
-
-        // Authenticate
-        if (!@ssh2_auth_password($connection, $config['username'], $config['password'])) {
-            $this->logger->log('SFTP authentication failed for user: ' . $config['username'], 'error');
-            throw new Exception("SFTP authentication failed. Please check username and password.");
-        }
-
-        // Initialize SFTP subsystem to verify the connection fully
-        $sftp = @ssh2_sftp($connection);
-        if (!$sftp) {
-            $this->logger->log('Could not initialize SFTP subsystem', 'error');
-            throw new Exception("Could not initialize SFTP subsystem.");
-        }
-
-        $this->logger->log('SFTP connection test successful');
-        return true;
     }
-  }
 
+    /**
+     * Disconnect from the server
+     */
+    public function disconnect() {
+        if ($this->using_phpseclib) {
+            // Phpseclib doesn't need explicit disconnect
+            $this->sftp = null;
+        } else if ($this->connection) {
+            // For native SSH2, we can't really force disconnect, but we can clear our references
+            $this->sftp = null;
+            $this->connection = null;
+        }
+
+        $this->connected = false;
+        $this->logger->log('SFTP disconnected');
+    }
+}
