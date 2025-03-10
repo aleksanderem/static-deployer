@@ -1,0 +1,5 @@
+settings/*.json
+logs/*.log
+temp/*
+.idea
+.DS_Store
