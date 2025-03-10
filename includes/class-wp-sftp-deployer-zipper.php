@@ -8,7 +8,21 @@
     public function __construct() {
       $this->logger = new WP_SFTP_Deployer_Logger();
     }
-    
+	public function create_package($source_path, $output_file) {
+	  $this->logger->log('Creating deployment package from: ' . $source_path);
+	  
+	  // Call the existing zip creation method
+	  $zip_file = $this->create_zip($source_path);
+	  
+	  // If the output path is different from what create_zip generated,
+	  // rename the file to match the expected output
+	  if ($zip_file !== $output_file && file_exists($zip_file)) {
+		rename($zip_file, $output_file);
+		return $output_file;
+	  }
+	  
+	  return $zip_file;
+	}
     /**
      * Create a ZIP file from a directory
      */

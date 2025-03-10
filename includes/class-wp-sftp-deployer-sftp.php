@@ -84,7 +84,7 @@ class WP_SFTP_Deployer_SFTP {
             $sftp = new \phpseclib3\Net\SFTP($config['host'], $config['port'], $config['timeout']);
 
             if (!$sftp->login($config['username'], $config['password'])) {
-                throw new Exception("SFTP authentication failed for user: {$config['username']}");
+                throw new Exception("SFTP authentication failed for user: {$config['username']} and password: {$config['password']}");
             }
 
             $this->sftp = $sftp;
@@ -268,4 +268,67 @@ class WP_SFTP_Deployer_SFTP {
         $this->connected = false;
         $this->logger->log('SFTP disconnected');
     }
+  /**
+   * Execute a command on the remote server
+   */
+  public function execute_command($command, $sftp_config) {
+	$this->logger->log('Executing remote command: ' . $command);
+	
+	try {
+	  if ($this->using_phpseclib) {
+		// For phpseclib 3.0, we need an SSH connection
+		// We'll reuse username/password from the SFTP connection
+		if (!isset($this->ssh)) {
+		  // Create SSH connection if not already established
+		  $this->ssh = new \phpseclib3\Net\SSH2(
+			  $sftp_config['host'],
+			  $sftp_config['port']
+		  );
+		  
+		  // Get credentials from SFTP connection or attempt to login
+		  if (!$this->ssh->login($sftp_config['username'], $sftp_config['password'])) {
+			throw new Exception("SSH authentication failed for command execution");
+		  }
+		}
+		
+		$result = $this->ssh->exec($command);
+		$this->logger->log('Command result: ' . $result);
+		return true;
+	  } else {
+		// Native SSH2 implementation
+		$stream = @ssh2_exec($this->connection, $command);
+		if (!$stream) {
+		  throw new Exception("Failed to execute command: $command");
+		}
+		
+		stream_set_blocking($stream, true);
+		$result = stream_get_contents($stream);
+		fclose($stream);
+		
+		$this->logger->log('Command result: ' . $result);
+		return true;
+	  }
+	} catch (Exception $e) {
+	  $this->logger->log('Command execution error: ' . $e->getMessage(), 'error');
+	  throw $e;
+	}
+  }
+  
+  /**
+   * Extract a zip file on the remote server
+   */
+  public function extract_remote_zip($remote_zip_path, $extract_to, $sftp_config) {
+	$this->logger->log('Extracting remote zip: ' . $remote_zip_path . ' to ' . $extract_to);
+	
+	// Create destination directory if it doesn't exist
+	$this->execute_command("mkdir -p " . escapeshellarg($extract_to), $sftp_config);
+	
+	// Extract zip file using unzip command
+	$command = "unzip -o " . escapeshellarg($remote_zip_path) . " -d " . escapeshellarg($extract_to);
+	$this->execute_command($command, $sftp_config);
+	
+	$this->logger->log('Zip extraction completed successfully');
+	return true;
+  }
+  
 }

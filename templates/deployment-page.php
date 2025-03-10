@@ -33,7 +33,7 @@
         
         <div id="deployment-details" style="margin-top: 20px;">
           <h3><?php _e('Deployment Log', 'wp-sftp-deployer'); ?></h3>
-          <div id="deployment-log" class="deployment-log"></div>
+          <div id="deployment-log" class="deployment-log"></div><div id="wp-sftp-deployer-logs"></div>
         </div>
       </div>
     </div>

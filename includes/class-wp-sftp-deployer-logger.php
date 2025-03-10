@@ -69,4 +69,34 @@
       }
       return [];
     }
+	/**
+	 * Clear log file contents
+	 *
+	 * @return boolean True if logs were successfully cleared
+	 */
+	public function clear_logs() {
+	  $log_file = WP_SFTP_DEPLOYER_LOG_DIR . 'deployer.log';
+	  $success = true;
+	  
+	  // Clear the main log file
+	  if (file_exists($log_file)) {
+		$success = file_put_contents($log_file, '') !== false;
+	  }
+	  
+	  // Clear custom log file if configured
+	  if (!empty($this->settings['logging']['custom_path'])) {
+		$custom_log_file = rtrim($this->settings['logging']['custom_path'], '/') . '/deployer.log';
+		
+		if (file_exists($custom_log_file) && is_writable($custom_log_file)) {
+		  file_put_contents($custom_log_file, '');
+		}
+	  }
+	  
+	  // Add entry about log clearing
+	  if ($success) {
+		$this->log('Log file has been cleared', 'info');
+	  }
+	  
+	  return $success;
+	}
   }

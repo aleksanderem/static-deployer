@@ -30,14 +30,14 @@
                         <input type="text" id="sftp_username" name="sftp_username" value="<?php echo esc_attr($sftp['username']); ?>" class="regular-text" required />
                     </td>
                 </tr>
-
-                <tr>
-                    <th scope="row"><label for="sftp_password"><?php _e('Password', 'wp-sftp-deployer'); ?></label></th>
-                    <td>
-                        <input type="password" id="sftp_password" name="sftp_password" value="" class="regular-text" placeholder="<?php echo !empty($sftp['password']) ? '••••••••' : ''; ?>" />
-                        <p class="description"><?php _e('Leave empty to keep the current password.', 'wp-sftp-deployer'); ?></p>
-                    </td>
-                </tr>
+                    <tr>
+                        <th scope="row"><label for="sftp_password"><?php _e('Password', 'wp-sftp-deployer'); ?></label></th>
+                        <td>
+                            <input type="password" id="sftp_password" name="sftp_password" value="" class="regular-text" />
+                            <input type="hidden" name="use_existing_password" value="1" />
+                            <p class="description"><?php _e('Leave empty to keep using the existing password.', 'wp-sftp-deployer'); ?></p>
+                        </td>
+                    </tr>
 
                 <tr>
                     <th scope="row"><label for="sftp_remote_path"><?php _e('Remote Path', 'wp-sftp-deployer'); ?></label></th>

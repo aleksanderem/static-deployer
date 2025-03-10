@@ -117,3 +117,20 @@
     color: #dc3232;
     font-weight: bold;
 }
+#wp-sftp-deployer-logs{
+    max-height: 150px;
+    overflow-y: scroll;
+    padding-top: 11px;
+    padding-bottom: 11px;
+    background: #0a0a0a;
+    margin-top: 20px;
+    font-size: 11px;
+    color: #DDD;
+    font-family: Courier;
+    white-space: nowrap;
+}
+#wp-sftp-deployer-logs .log-entry {
+    margin-bottom: 5px;
+    padding: 3px;
+    white-space:nowrap;
+}
